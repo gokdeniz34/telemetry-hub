@@ -1,6 +1,7 @@
 using Microsoft.Extensions.Options;
 using MongoDB.Driver;
 using TelemetryHub.Api;
+using TelemetryHub.Api.Infrastructure.Mongo.Repositories;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -22,6 +23,10 @@ builder.Services.AddSingleton<IMongoClient>(sp =>
 
     return new MongoClient(settings.ConnectionString);
 });
+
+builder.Services.AddSingleton<MongoContext>();
+
+builder.Services.AddSingleton<TelemetryRepository>();
 
 var app = builder.Build();
 

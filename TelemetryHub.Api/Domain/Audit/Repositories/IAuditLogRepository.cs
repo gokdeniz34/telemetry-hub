@@ -1,6 +1,6 @@
 ﻿namespace TelemetryHub.Api;
 
-public class TelemetryEvent
+public interface IAuditLogRepository
 {
 
 }
