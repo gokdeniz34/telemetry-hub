@@ -1,3 +1,0 @@
-﻿<Project>
-  <Import Project="..\build\TelemetryHub.Api.props" />
-</Project>
