@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Mvc;
+using TelemetryHub.Api.Domain.Audit;
 using TelemetryHub.Api.Domain.Telemetry;
 using TelemetryHub.Api.Infrastructure.Mongo.Repositories;
 
@@ -16,6 +17,7 @@ public class TelemetryIngestController : ControllerBase
     }
 
     [HttpPost("ingest")]
+    [Auditable("TelemetryIngest")]
     public async Task<IActionResult> Ingest()
     {
         var telemetry = new TelemetryEvent

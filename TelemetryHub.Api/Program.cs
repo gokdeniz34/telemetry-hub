@@ -2,11 +2,19 @@ using Microsoft.Extensions.Options;
 using MongoDB.Driver;
 using TelemetryHub.Api;
 using TelemetryHub.Api.Infrastructure.Mongo.Repositories;
+using TelemetryHub.Api.Middleware;
 
 var builder = WebApplication.CreateBuilder(args);
 
+builder.Services.AddSingleton<MongoContext>();
+builder.Services.AddSingleton<TelemetryRepository>();
+builder.Services.AddScoped<AuditActionFilter>();
+
 // Controllers
-builder.Services.AddControllers();
+builder.Services.AddControllers(options =>
+{
+    options.Filters.Add<AuditActionFilter>();
+});
 
 // Swagger UI
 builder.Services.AddEndpointsApiExplorer();
@@ -24,11 +32,9 @@ builder.Services.AddSingleton<IMongoClient>(sp =>
     return new MongoClient(settings.ConnectionString);
 });
 
-builder.Services.AddSingleton<MongoContext>();
-
-builder.Services.AddSingleton<TelemetryRepository>();
-
 var app = builder.Build();
+
+app.UseMiddleware<GlobalExceptionMiddleware>();
 
 if (app.Environment.IsDevelopment())
 {
