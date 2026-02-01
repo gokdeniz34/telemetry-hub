@@ -1,16 +1,27 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
+using MongoDB.Bson.Serialization;
+using MongoDB.Bson.Serialization.Serializers;
 using MongoDB.Driver;
 using TelemetryHub.Api;
 using TelemetryHub.Api.Application.Telemetry.Handlers;
+using TelemetryHub.Api.BackgroundJobs;
 using TelemetryHub.Api.Domain.Audit.Repositories;
 using TelemetryHub.Api.Domain.Telemetry.Repositories;
+using TelemetryHub.Api.Filters;
 using TelemetryHub.Api.Infrastructure.Audit.Repositories;
+using TelemetryHub.Api.Infrastructure.Common;
+using TelemetryHub.Api.Infrastructure.Mongo;
 using TelemetryHub.Api.Infrastructure.Mongo.Repositories;
 using TelemetryHub.Api.Infrastructure.MySql;
 using TelemetryHub.Api.Middleware;
 
 var builder = WebApplication.CreateBuilder(args);
+
+var objectSerializer = new ObjectSerializer(type =>
+    ObjectSerializer.DefaultAllowedTypes(type) ||
+    (type.FullName != null && type.FullName.StartsWith("System.Text.Json")));
+BsonSerializer.RegisterSerializer(objectSerializer);
 
 //
 // MongoDB
@@ -25,7 +36,6 @@ builder.Services.AddSingleton<IMongoClient>(sp =>
 });
 
 builder.Services.AddScoped<MongoContext>();
-builder.Services.AddScoped<ITelemetryRepository, MongoTelemetryRepository>();
 
 //
 // MySQL / EF Core
@@ -36,7 +46,6 @@ builder.Services.AddDbContext<TelemetryHubDbContext>(options =>
         new MySqlServerVersion(new Version(8, 0, 32))
     ), ServiceLifetime.Scoped);
 
-builder.Services.AddScoped<IAuditLogRepository, MySqlAuditLogRepository>();
 
 //
 // Filters
@@ -49,12 +58,20 @@ builder.Services.AddScoped<AuditActionFilter>();
 builder.Services.AddScoped<TelemetryIngestHandler>();
 builder.Services.AddScoped<TelemetryQueryHandler>();
 
+
+builder.Services.AddSingleton<TelemetryQueue>(); // Önemli: Singleton olmalı
+builder.Services.AddHostedService<TelemetryBackgroundWorker>();
+builder.Services.AddHostedService<TelemetryAggregationJob>();
+builder.Services.AddScoped<ITelemetryRepository, MongoTelemetryRepository>();
+builder.Services.AddScoped<IAuditLogRepository, MySqlAuditLogRepository>();
+
 //
 // Controllers
 //
 builder.Services.AddControllers(options =>
 {
-    options.Filters.Add<AuditActionFilter>();
+    // options.Filters.Add<AuditActionFilter>();
+    options.Filters.Add<ValidationFilter>();
 });
 
 //

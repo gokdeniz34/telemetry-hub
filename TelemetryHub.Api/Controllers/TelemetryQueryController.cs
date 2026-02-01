@@ -6,48 +6,13 @@ namespace TelemetryHub.Api.Controllers;
 
 [ApiController]
 [Route("api/telemetry")]
-public sealed class TelemetryQueryController : ControllerBase
+public sealed class TelemetryQueryController(TelemetryQueryHandler handler) : ControllerBase
 {
-    private readonly TelemetryQueryHandler _handler;
-
-    public TelemetryQueryController(TelemetryQueryHandler handler)
-    {
-        _handler = handler;
-    }
-
     [HttpGet("{deviceId}")]
-    public async Task<IActionResult> GetTelemetry(
-        string deviceId,
-        [FromQuery] string? level,
-        [FromQuery] DateTime? startDateUtc,
-        [FromQuery] DateTime? endDateUtc,
-        [FromQuery] int page = 1,
-        [FromQuery] int pageSize = 50,
-        CancellationToken ct = default)
+    public async Task<IActionResult> GetByDevice(string deviceId, [FromQuery] int limit = 100)
     {
-        var query = new GetTelemetryQuery
-        {
-            DeviceId = deviceId,
-            Level = level,
-            StartDateUtc = startDateUtc,
-            EndDateUtc = endDateUtc,
-            Page = page,
-            PageSize = pageSize
-        };
-
-        var result = await _handler.HandleAsync(query, ct);
-
-        if (!result.Success)
-            return NotFound(new
-            {
-                success = false,
-                error = result.Error
-            });
-
-        return Ok(new
-        {
-            success = true,
-            data = result.Data
-        });
+        var query = new GetTelemetryQuery(deviceId, limit);
+        var result = await handler.HandleAsync(query);
+        return Ok(result);
     }
 }
