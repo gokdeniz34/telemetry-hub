@@ -1,46 +1,40 @@
 using Microsoft.AspNetCore.Mvc;
+using TelemetryHub.Api.Application.Telemetry.Commands;
+using TelemetryHub.Api.Application.Telemetry.Handlers;
 using TelemetryHub.Api.Domain.Audit;
-using TelemetryHub.Api.Domain.Telemetry;
-using TelemetryHub.Api.Infrastructure.Mongo.Repositories;
 
 namespace TelemetryHub.Api.Controllers;
 
 [ApiController]
 [Route("api/telemetry")]
-public class TelemetryIngestController : ControllerBase
+public sealed class TelemetryIngestController : ControllerBase
 {
-    private readonly TelemetryRepository _repository;
+    private readonly TelemetryIngestHandler _handler;
 
-    public TelemetryIngestController(TelemetryRepository repository)
+    public TelemetryIngestController(TelemetryIngestHandler handler)
     {
-        _repository = repository;
+        _handler = handler;
     }
 
     [HttpPost("ingest")]
-    [Auditable("TelemetryIngest")]
-    public async Task<IActionResult> Ingest()
+    // [Auditable("TelemetryIngest")]
+    public async Task<IActionResult> Ingest([FromBody] IngestTelemetryCommand command, CancellationToken ct)
     {
-        var telemetry = new TelemetryEvent
-        {
-            Source = "backend-api",
-            Service = "auth",
-            EventName = "login_success",
-            Level = "Info",
-            OccurredAt = DateTime.UtcNow,
-            Payload = new Dictionary<string, object>
-            {
-                { "userId", 43 },
-                { "ip", "127.0.0.1" },
-                { "durationMs", 125 }
-            }
-        };
+        var result = await _handler.HandleAsync(command, ct);
 
-        await _repository.InsertAsync(telemetry);
+        if (!result.Success)
+        {
+            return BadRequest(new
+            {
+                success = false,
+                error = result.Error
+            });
+        }
 
         return Ok(new
         {
-            message = "Telemetry inserted",
-            id = telemetry.Id
+            success = true,
+            id = result.Data
         });
     }
 }

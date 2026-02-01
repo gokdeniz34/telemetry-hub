@@ -1,6 +1,13 @@
-﻿namespace TelemetryHub.Api;
+﻿using Microsoft.EntityFrameworkCore;
+using TelemetryHub.Api.Domain.Audit.Entities;
 
-public class TelemetryHubDbContext
+namespace TelemetryHub.Api.Infrastructure.MySql;
+
+public sealed class TelemetryHubDbContext : DbContext
 {
+    public TelemetryHubDbContext(DbContextOptions<TelemetryHubDbContext> options)
+        : base(options)
+    { }
 
+    public DbSet<AuditLog> AuditLogs { get; set; } = default!;
 }
