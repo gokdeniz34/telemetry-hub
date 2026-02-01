@@ -1,4 +1,6 @@
-﻿namespace TelemetryHub.Api;
+﻿using TelemetryHub.Api.Domain.Audit.Entities;
+
+namespace TelemetryHub.Api.Domain.Audit.Repositories;
 
 public interface IAuditLogRepository
 {

@@ -1,26 +1,19 @@
 ﻿using System.Net;
 using Microsoft.AspNetCore.Mvc;
+using TelemetryHub.Api.Domain.Telemetry.Entities;
+using TelemetryHub.Api.Infrastructure.Common;
 
 namespace TelemetryHub.Api.Middleware;
 
-public sealed class GlobalExceptionMiddleware
+public sealed class GlobalExceptionMiddleware(
+    RequestDelegate next,
+    ILogger<GlobalExceptionMiddleware> logger)
 {
-    private readonly RequestDelegate _next;
-    private readonly ILogger<GlobalExceptionMiddleware> _logger;
-
-    public GlobalExceptionMiddleware(
-        RequestDelegate next,
-        ILogger<GlobalExceptionMiddleware> logger)
-    {
-        _next = next;
-        _logger = logger;
-    }
-
     public async Task InvokeAsync(HttpContext context)
     {
         try
         {
-            await _next(context);
+            await next(context);
         }
         catch (Exception ex)
         {
@@ -28,17 +21,49 @@ public sealed class GlobalExceptionMiddleware
         }
     }
 
-    private async Task HandleExceptionAsync(
-        HttpContext context,
-        Exception exception)
+    private async Task HandleExceptionAsync(HttpContext context, Exception exception)
     {
         var traceId = context.TraceIdentifier;
 
-        _logger.LogError(
+        // 1. Önce Loglama (Console/File)
+        logger.LogError(
             exception,
             "Unhandled exception occurred. TraceId: {TraceId}",
             traceId);
 
+        // 2. PROFESYONEL EKLEME: Hatayı Telemetri Sistemine (MongoDB) Kaydetme
+        // Middleware Singleton olduğu için Scoped olan TelemetryQueue'yu context üzerinden alıyoruz.
+        try
+        {
+            var queue = context.RequestServices.GetRequiredService<TelemetryQueue>();
+
+            var errorTelemetry = TelemetryEvent.Create(
+                source: "telemetry-api-internal",
+                service: "exception-middleware",
+                eventName: "unhandled_exception",
+                deviceId: "api-server",
+                level: "Critical",
+                payload: new Dictionary<string, object>
+                {
+                    { "TraceId", traceId },
+                    { "Exception", exception.GetType().Name },
+                    { "Message", exception.Message },
+                    { "StackTrace", exception.StackTrace ?? string.Empty },
+                    { "Path", context.Request.Path },
+                    { "Method", context.Request.Method }
+                }
+            );
+
+            // Kuyruğa at (Bekleme yapmaz, arka planda worker halleder)
+            await queue.Writer.WriteAsync(errorTelemetry);
+        }
+        catch (Exception telemetryEx)
+        {
+            // Telemetri kuyruğunda bir sorun olursa ana akışı bozmamak için sadece logla
+            logger.LogCritical(telemetryEx, "Could not queue error telemetry.");
+        }
+
+        // 3. Kullanıcıya ProblemDetails Yanıtı Dönme
         var problem = new ProblemDetails
         {
             Type = "telemetryhub/internal-error",
@@ -48,7 +73,6 @@ public sealed class GlobalExceptionMiddleware
             Instance = context.Request.Path
         };
 
-        // ⭐ Hibrit yaklaşım burada
         problem.Extensions["traceId"] = traceId;
         problem.Extensions["timestamp"] = DateTime.UtcNow;
 

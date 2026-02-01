@@ -1,46 +1,23 @@
 using Microsoft.AspNetCore.Mvc;
-using TelemetryHub.Api.Domain.Audit;
-using TelemetryHub.Api.Domain.Telemetry;
-using TelemetryHub.Api.Infrastructure.Mongo.Repositories;
+using TelemetryHub.Api.Application.Telemetry.Commands;
+using TelemetryHub.Api.Application.Telemetry.Handlers;
 
 namespace TelemetryHub.Api.Controllers;
 
 [ApiController]
 [Route("api/telemetry")]
-public class TelemetryIngestController : ControllerBase
+public sealed class TelemetryIngestController(TelemetryIngestHandler handler) : ControllerBase
 {
-    private readonly TelemetryRepository _repository;
-
-    public TelemetryIngestController(TelemetryRepository repository)
-    {
-        _repository = repository;
-    }
-
     [HttpPost("ingest")]
-    [Auditable("TelemetryIngest")]
-    public async Task<IActionResult> Ingest()
+    public async Task<IActionResult> Ingest([FromBody] IngestTelemetryCommand command, CancellationToken ct)
     {
-        var telemetry = new TelemetryEvent
-        {
-            Source = "backend-api",
-            Service = "auth",
-            EventName = "login_success",
-            Level = "Info",
-            OccurredAt = DateTime.UtcNow,
-            Payload = new Dictionary<string, object>
-            {
-                { "userId", 43 },
-                { "ip", "127.0.0.1" },
-                { "durationMs", 125 }
-            }
-        };
+        var result = await handler.HandleAsync(command, ct);
 
-        await _repository.InsertAsync(telemetry);
-
-        return Ok(new
+        if (!result.Success)
         {
-            message = "Telemetry inserted",
-            id = telemetry.Id
-        });
+            return BadRequest(result);
+        }
+
+        return Accepted(result);
     }
 }

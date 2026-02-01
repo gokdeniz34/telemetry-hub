@@ -1,20 +1,16 @@
 ﻿using Microsoft.Extensions.Options;
 using MongoDB.Driver;
-using TelemetryHub.Api.Domain.Telemetry;
-
-namespace TelemetryHub.Api;
+using TelemetryHub.Api;
+using TelemetryHub.Api.Domain.Telemetry.Entities;
 
 public class MongoContext
 {
-    private readonly IMongoDatabase _database;
+    private readonly IMongoDatabase _db;
 
-    public MongoContext(
-        IMongoClient client,
-        IOptions<MongoSettings> settings)
+    public MongoContext(IMongoClient client, IOptions<MongoSettings> settings)
     {
-        _database = client.GetDatabase(settings.Value.Database);
+        _db = client.GetDatabase(settings.Value.Database);
     }
 
-    public IMongoCollection<TelemetryEvent> TelemetryEvents =>
-        _database.GetCollection<TelemetryEvent>("telemetry_events");
+    public IMongoCollection<TelemetryEvent> TelemetryEvents => _db.GetCollection<TelemetryEvent>("TelemetryEvents");
 }
