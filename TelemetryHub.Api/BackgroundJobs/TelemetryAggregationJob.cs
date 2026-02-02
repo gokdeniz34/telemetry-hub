@@ -23,22 +23,30 @@ public class TelemetryAggregationJob(
 
                 var hourlyStats = await mongoRepo.GetHourlyStatsAsync();
 
-                if (hourlyStats.Any())
+                if (hourlyStats.Count > 0)
                 {
                     var today = DateTime.UtcNow.Date;
 
                     foreach (var stat in hourlyStats)
                     {
-                        // MySQL'de "Upsert" işlemi: Varsa güncelle, yoksa ekle
                         var existing = await dbContext.Set<TelemetrySummary>()
                             .FirstOrDefaultAsync(x => x.DeviceId == stat.DeviceId && x.Date == today, stoppingToken);
 
+                        // Yeni gelen verinin toplam adet sayısı
+                        int newBatchCount = stat.TotalSuccess + stat.TotalError;
+
                         if (existing != null)
                         {
+                            // AĞIRLIKLI ORTALAMA HESABI:
+                            // (Eski Ortalama * Eski Adet + Yeni Ortalama * Yeni Adet) / (Eski Adet + Yeni Adet)
+                            double totalOldDuration = existing.AverageDuration * existing.TotalCount;
+                            double totalNewDuration = stat.AverageDuration * newBatchCount;
+
+                            existing.TotalCount += newBatchCount;
+                            existing.AverageDuration = (totalOldDuration + totalNewDuration) / existing.TotalCount;
+
                             existing.TotalSuccess += stat.TotalSuccess;
                             existing.TotalError += stat.TotalError;
-                            // Ağırlıklı ortalama mantığına girmeden basit güncelleme:
-                            existing.AverageDuration = stat.AverageDuration;
                         }
                         else
                         {
@@ -48,7 +56,8 @@ public class TelemetryAggregationJob(
                                 Date = today,
                                 TotalSuccess = stat.TotalSuccess,
                                 TotalError = stat.TotalError,
-                                AverageDuration = stat.AverageDuration
+                                AverageDuration = stat.AverageDuration,
+                                TotalCount = newBatchCount // İlk defa ekleniyor
                             }, stoppingToken);
                         }
                     }

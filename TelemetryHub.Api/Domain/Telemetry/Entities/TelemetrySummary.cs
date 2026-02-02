@@ -7,5 +7,6 @@ public class TelemetrySummary
     public string DeviceId { get; set; } = null!;
     public int TotalSuccess { get; set; }
     public int TotalError { get; set; }
+    public int TotalCount { get; set; }
     public double AverageDuration { get; set; }
 }

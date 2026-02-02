@@ -1,0 +1,53 @@
+version: '3.8'
+
+services:
+  # --- ELASTICSEARCH (Logların tutulduğu yer) ---
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.11.1
+    container_name: telemetry_elastic
+    environment:
+      - discovery.type=single-node
+      - xpack.security.enabled=false # Şifreyi şimdilik devre dışı bıraktık
+      - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
+    ports:
+      - "9200:9200"
+    networks:
+      - telemetry_network
+
+  # --- KIBANA (Logları izleyeceğin arayüz) ---
+  kibana:
+    image: docker.elastic.co/kibana/kibana:8.11.1
+    container_name: telemetry_kibana
+    environment:
+      - ELASTICSEARCH_HOSTS=http://elasticsearch:9200
+    ports:
+      - "5601:5601"
+    depends_on:
+      - elasticsearch
+    networks:
+      - telemetry_network
+
+  # --- MONGODB (Ham telemetri verisi) ---
+  mongodb:
+    image: mongo:latest
+    container_name: telemetry_mongo
+    ports:
+      - "27017:27017"
+    networks:
+      - telemetry_network
+
+  # --- MYSQL (Özet veriler ve Audit loglar) ---
+  mysql:
+    image: mysql:8.0
+    container_name: telemetry_mysql
+    environment:
+      MYSQL_ROOT_PASSWORD: "08685868Ygo@" # appsettings'teki şifrenle aynı
+      MYSQL_DATABASE: "telemetryhub"
+    ports:
+      - "3306:3306"
+    networks:
+      - telemetry_network
+
+networks:
+  telemetry_network:
+    driver: bridge
