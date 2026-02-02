@@ -3,6 +3,8 @@ using Microsoft.Extensions.Options;
 using MongoDB.Bson.Serialization;
 using MongoDB.Bson.Serialization.Serializers;
 using MongoDB.Driver;
+using Serilog;
+using Serilog.Sinks.Elasticsearch;
 using TelemetryHub.Api;
 using TelemetryHub.Api.Application.Telemetry.Handlers;
 using TelemetryHub.Api.BackgroundJobs;
@@ -18,73 +20,71 @@ using TelemetryHub.Api.Middleware;
 
 var builder = WebApplication.CreateBuilder(args);
 
+// --- 1. SERILOG & ELK YAPILANDIRMASI ---
+Log.Logger = new LoggerConfiguration()
+    .Enrich.FromLogContext()
+    .Enrich.WithProperty("Application", "TelemetryHub.Api")
+    .WriteTo.Console()
+    .WriteTo.Elasticsearch(new ElasticsearchSinkOptions(new Uri(builder.Configuration["Elasticsearch:Uri"] ?? "http://localhost:9200"))
+    {
+        AutoRegisterTemplate = true,
+        IndexFormat = "telemetry-hub-logs-{0:yyyy.MM.dd}",
+        NumberOfReplicas = 1,
+        NumberOfShards = 2
+    })
+    .CreateLogger();
+
+builder.Host.UseSerilog();
+
+// --- 2. MONGODB SERIALIZATION ---
 var objectSerializer = new ObjectSerializer(type =>
     ObjectSerializer.DefaultAllowedTypes(type) ||
     (type.FullName != null && type.FullName.StartsWith("System.Text.Json")));
 BsonSerializer.RegisterSerializer(objectSerializer);
 
-//
+// --- 3. VERİTABANI SERVİSLERİ ---
 // MongoDB
-//
-builder.Services.Configure<MongoSettings>(
-    builder.Configuration.GetSection("Mongo"));
-
+builder.Services.Configure<MongoSettings>(builder.Configuration.GetSection("Mongo"));
 builder.Services.AddSingleton<IMongoClient>(sp =>
 {
     var settings = sp.GetRequiredService<IOptions<MongoSettings>>().Value;
     return new MongoClient(settings.ConnectionString);
 });
-
 builder.Services.AddScoped<MongoContext>();
 
-//
 // MySQL / EF Core
-//
 builder.Services.AddDbContext<TelemetryHubDbContext>(options =>
     options.UseMySql(
         builder.Configuration.GetConnectionString("TelemetryHubDb"),
         new MySqlServerVersion(new Version(8, 0, 32))
     ), ServiceLifetime.Scoped);
 
-
-//
-// Filters
-//
+// --- 4. APPLICATION SERVİSLERİ ---
 builder.Services.AddScoped<AuditActionFilter>();
-
-//
-// Handlers
-//
+builder.Services.AddScoped<ValidationFilter>();
 builder.Services.AddScoped<TelemetryIngestHandler>();
 builder.Services.AddScoped<TelemetryQueryHandler>();
 
-
-builder.Services.AddSingleton<TelemetryQueue>(); // Önemli: Singleton olmalı
+// --- 5. BACKGROUND JOBS & QUEUE ---
+builder.Services.AddSingleton<TelemetryQueue>();
 builder.Services.AddHostedService<TelemetryBackgroundWorker>();
 builder.Services.AddHostedService<TelemetryAggregationJob>();
+
+// --- 6. REPOSITORIES ---
 builder.Services.AddScoped<ITelemetryRepository, MongoTelemetryRepository>();
 builder.Services.AddScoped<IAuditLogRepository, MySqlAuditLogRepository>();
 
-//
-// Controllers
-//
 builder.Services.AddControllers(options =>
 {
-    // options.Filters.Add<AuditActionFilter>();
     options.Filters.Add<ValidationFilter>();
 });
 
-//
-// Swagger
-//
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
 var app = builder.Build();
 
-//
-// Middleware
-//
+// --- 7. MIDDLEWARE PIPELINE ---
 app.UseMiddleware<GlobalExceptionMiddleware>();
 
 if (app.Environment.IsDevelopment())
@@ -93,16 +93,24 @@ if (app.Environment.IsDevelopment())
     app.UseSwaggerUI(c =>
     {
         c.DocumentTitle = "TelemetryHub API";
-        c.RoutePrefix = "swagger"; // explicit
+        c.RoutePrefix = "swagger";
     });
 }
 
 app.UseHttpsRedirection();
 app.MapControllers();
-
-//
-// Health check
-//
 app.MapGet("/health", () => Results.Ok("TelemetryHub alive"));
 
-app.Run();
+try
+{
+    Log.Information("Starting TelemetryHub API...");
+    app.Run();
+}
+catch (Exception ex)
+{
+    Log.Fatal(ex, "Application terminated unexpectedly");
+}
+finally
+{
+    Log.CloseAndFlush();
+}

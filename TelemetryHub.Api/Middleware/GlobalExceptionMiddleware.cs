@@ -25,16 +25,16 @@ public sealed class GlobalExceptionMiddleware(
     {
         var traceId = context.TraceIdentifier;
 
-        // 1. Önce Loglama (Console/File)
-        logger.LogError(
-            exception,
-            "Unhandled exception occurred. TraceId: {TraceId}",
-            traceId);
+        // 1. ELK İÇİN STRUCTURED LOGGING
+        // Serilog sayesinde bu veriler Elasticsearch'te filtrelenebilir alanlar olur.
+        logger.LogError(exception,
+            "Unhandled exception. TraceId: {TraceId}, Path: {Path}, Method: {Method}, Message: {ErrorMessage}",
+            traceId, context.Request.Path, context.Request.Method, exception.Message);
 
-        // 2. PROFESYONEL EKLEME: Hatayı Telemetri Sistemine (MongoDB) Kaydetme
-        // Middleware Singleton olduğu için Scoped olan TelemetryQueue'yu context üzerinden alıyoruz.
+        // 2. İÇ TELEMETRİ (MONGODB)
         try
         {
+            // Middleware Singleton olduğu için Scoped servisleri request üzerinden alıyoruz.
             var queue = context.RequestServices.GetRequiredService<TelemetryQueue>();
 
             var errorTelemetry = TelemetryEvent.Create(
@@ -48,35 +48,32 @@ public sealed class GlobalExceptionMiddleware(
                     { "TraceId", traceId },
                     { "Exception", exception.GetType().Name },
                     { "Message", exception.Message },
-                    { "StackTrace", exception.StackTrace ?? string.Empty },
-                    { "Path", context.Request.Path },
-                    { "Method", context.Request.Method }
+                    { "Path", context.Request.Path }
                 }
             );
 
-            // Kuyruğa at (Bekleme yapmaz, arka planda worker halleder)
             await queue.Writer.WriteAsync(errorTelemetry);
         }
         catch (Exception telemetryEx)
         {
-            // Telemetri kuyruğunda bir sorun olursa ana akışı bozmamak için sadece logla
-            logger.LogCritical(telemetryEx, "Could not queue error telemetry.");
+            // Eğer telemetri kuyruğu da çökerse, ELK'ya kritik bir log daha düşüyoruz.
+            logger.LogCritical(telemetryEx, "Critical: Could not queue error telemetry to MongoDB.");
         }
 
-        // 3. Kullanıcıya ProblemDetails Yanıtı Dönme
+        // 3. KULLANICIYA DÖNÜLECEK HATA FORMATI (RFC 7807)
         var problem = new ProblemDetails
         {
             Type = "telemetryhub/internal-error",
-            Title = "Unexpected error occurred",
+            Title = "An unexpected error occurred",
             Status = (int)HttpStatusCode.InternalServerError,
-            Detail = "An unexpected error occurred. Please contact support.",
+            Detail = "Something went wrong on our end. Use the traceId for support.",
             Instance = context.Request.Path
         };
 
         problem.Extensions["traceId"] = traceId;
         problem.Extensions["timestamp"] = DateTime.UtcNow;
 
-        context.Response.StatusCode = problem.Status.Value;
+        context.Response.StatusCode = (int)HttpStatusCode.InternalServerError;
         context.Response.ContentType = "application/problem+json";
 
         await context.Response.WriteAsJsonAsync(problem);
