@@ -14,8 +14,8 @@ public class TelemetryEvent
     public string Level { get; private set; } = "Info";      // Info, Warning, Error, Critical
     public DateTime OccurredAt { get; private set; }
     public string DeviceId { get; set; } = null!;
-
-    // Esnek veri tutan alan
+    public bool IsProcessed { get; set; } = false;
+    public int DurationMs { get; set; }
     public Dictionary<string, object>? Payload { get; private set; }
 
     private TelemetryEvent() { }
@@ -25,6 +25,8 @@ public class TelemetryEvent
         string service,
         string eventName,
         string deviceId,
+        int durationMs,
+        bool isProcessed = false,
         string level = "Info",
         Dictionary<string, object>? payload = null)
     {
@@ -36,6 +38,8 @@ public class TelemetryEvent
             Level = level,
             OccurredAt = DateTime.UtcNow,
             DeviceId = deviceId,
+            IsProcessed = isProcessed,
+            DurationMs = durationMs,
             Payload = payload
         };
     }

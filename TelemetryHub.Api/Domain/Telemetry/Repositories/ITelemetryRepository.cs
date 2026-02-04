@@ -16,5 +16,5 @@ public interface ITelemetryRepository
         int page = 1,
         int pageSize = 50,
         CancellationToken ct = default);
-        Task<List<TelemetrySummaryDto>> GetHourlyStatsAsync();
+        Task<List<TelemetrySummaryDto>> GetHourlyStatsAndMarkAsProcessedAsync();
 }

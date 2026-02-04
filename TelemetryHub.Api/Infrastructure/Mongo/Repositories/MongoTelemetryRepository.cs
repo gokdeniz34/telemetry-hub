@@ -22,12 +22,11 @@ public class MongoTelemetryRepository : ITelemetryRepository
     }
     public async Task BulkInsertAsync(IEnumerable<TelemetryEvent> events)
     {
-        if (events == null || !events.Any()) return;
+        if (events == null || !events.Any())
+            return;
 
-        // InsertManyAsync, MongoDB'nin toplu yazma protokolünü kullanır.
         await _collection.InsertManyAsync(events);
     }
-
     public async Task InsertAsync(
         TelemetryEvent telemetryEvent,
         CancellationToken ct = default)
@@ -62,29 +61,32 @@ public class MongoTelemetryRepository : ITelemetryRepository
             .Limit(pageSize)
             .ToListAsync(ct);
     }
-
-    public async Task<List<TelemetrySummaryDto>> GetHourlyStatsAsync()
+    public async Task<List<TelemetrySummaryDto>> GetHourlyStatsAndMarkAsProcessedAsync()
     {
-        var oneHourAgo = DateTime.UtcNow.AddHours(-1);
+        // 1. Henüz işlenmemiş verileri bul
+        var unprocessedEvents = await _collection.Find(x => !x.IsProcessed).ToListAsync();
 
-        var stats = await _collection.Aggregate()
-            .Match(x => x.OccurredAt >= oneHourAgo)
-            .Group(x => x.DeviceId, g => new
+        if (!unprocessedEvents.Any()) return new List<TelemetrySummaryDto>();
+
+        // 2. Gruplama ve Ortalama (Memory'de yapmak veriler çok değilse en kolayı)
+        var stats = unprocessedEvents
+            .GroupBy(x => x.DeviceId)
+            .Select(g => new TelemetrySummaryDto
             {
                 DeviceId = g.Key,
-                SuccessCount = g.Count(x => x.Level != "Error" && x.Level != "Critical"),
-                ErrorCount = g.Count(x => x.Level == "Error" || x.Level == "Critical"),
-                Durations = g.Select(x => x.Payload["DurationMs"])
-            })
-            .ToListAsync();
+                TotalSuccess = g.Count(x => x.Level != "Error" && x.Level != "Critical"),
+                TotalError = g.Count(x => x.Level == "Error" || x.Level == "Critical"),
+                // Artık DurationMs Entity içinde olduğu için direkt erişiyoruz!
+                AverageDuration = g.Average(x => x.DurationMs)
+            }).ToList();
 
-        // Ortalama hesaplamasını C# tarafında (Memory'de) yapıyoruz (Çünkü gruplanmış veri artık çok küçüktür)
-        return stats.Select(s => new TelemetrySummaryDto
-        {
-            DeviceId = s.DeviceId,
-            TotalSuccess = s.SuccessCount,
-            TotalError = s.ErrorCount,
-            AverageDuration = s.Durations.Any() ? s.Durations.Select(d => Convert.ToDouble(d)).Average() : 0
-        }).ToList();
+        // 3. İŞLENDİ OLARAK İŞARETLE (Çok Kritik!)
+        var ids = unprocessedEvents.Select(x => x.Id).ToList();
+        await _collection.UpdateManyAsync(
+            Builders<TelemetryEvent>.Filter.In(x => x.Id, ids),
+            Builders<TelemetryEvent>.Update.Set(x => x.IsProcessed, true)
+        );
+
+        return stats;
     }
 }

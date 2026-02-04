@@ -62,13 +62,14 @@ builder.Services.AddDbContext<TelemetryHubDbContext>(options =>
 // --- 4. APPLICATION SERVİSLERİ ---
 builder.Services.AddScoped<AuditActionFilter>();
 builder.Services.AddScoped<ValidationFilter>();
-builder.Services.AddScoped<TelemetryIngestHandler>();
+builder.Services.AddScoped<IngestTelemetryHandler>();
 builder.Services.AddScoped<TelemetryQueryHandler>();
 
 // --- 5. BACKGROUND JOBS & QUEUE ---
 builder.Services.AddSingleton<TelemetryQueue>();
 builder.Services.AddHostedService<TelemetryBackgroundWorker>();
 builder.Services.AddHostedService<TelemetryAggregationJob>();
+builder.Services.AddHostedService<TelemetrySimulator>();
 
 // --- 6. REPOSITORIES ---
 builder.Services.AddScoped<ITelemetryRepository, MongoTelemetryRepository>();

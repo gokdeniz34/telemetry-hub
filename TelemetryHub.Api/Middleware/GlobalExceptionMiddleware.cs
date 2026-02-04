@@ -43,6 +43,7 @@ public sealed class GlobalExceptionMiddleware(
                 eventName: "unhandled_exception",
                 deviceId: "api-server",
                 level: "Critical",
+                durationMs: 0,
                 payload: new Dictionary<string, object>
                 {
                     { "TraceId", traceId },
