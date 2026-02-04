@@ -6,7 +6,7 @@ namespace TelemetryHub.Api.Controllers;
 
 [ApiController]
 [Route("api/telemetry")]
-public sealed class TelemetryIngestController(TelemetryIngestHandler handler) : ControllerBase
+public sealed class TelemetryIngestController(IngestTelemetryHandler handler) : ControllerBase
 {
     [HttpPost("ingest")]
     public async Task<IActionResult> Ingest([FromBody] IngestTelemetryCommand command, CancellationToken ct)
